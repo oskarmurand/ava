@@ -10,11 +10,10 @@ There are multiple options for configuring how AVA transpiles your tests using B
  - [Transpiling tests and sources the same way](#transpiling-tests-and-sources-the-same-way)
  - [Extend your source transpilation configuration](#extend-your-source-transpilation-configuration)
  - [Extend an alternate config file (i.e. not `.babelrc`)](#extend-an-alternate-config-file)
- - [Notes](#notes)
 
 ## AVA's default transpiler behavior
 
-By default, AVA transpiles your tests and helper files using the [`@ava/stage-4`](https://github.com/avajs/babel-preset-stage-4) Babel preset. This is a great option for small modules where you do not desire a build step to transpile your source before deploying to `npm`.
+AVA lets you use some nifty JavaScript features, like [async functions](https://github.com/avajs/ava#async-function-support). To make this work on older Node.js versions AVA transpiles the tests and helper files using the [`@ava/stage-4`](https://github.com/avajs/babel-preset-stage-4) Babel preset. This is great for projects where you do not use Babel for your source, but do want to use the newest JavaScript features for your tests.
 
 ## Customizing how AVA transpiles your tests
 
@@ -27,6 +26,24 @@ You can override the default Babel configuration AVA uses for test transpilation
       "plugins": ["rewire"],
       "presets": ["@ava/stage-4", "stage-3"]
     }
+  }
+}
+```
+
+## Use Babel Polyfills
+
+AVA lets you write your tests using new JavaScript syntax, even on Node.js versions that otherwise wouldn't support it. However, it doesn't add or modify built-ins of your current environment. Using AVA would, for example, not provide modern features such as `Array.prototype.includes()` to an underlying Node.js 4 environment.
+
+By loading [Babel's Polyfill module](https://babeljs.io/docs/usage/polyfill/) you can opt in to these features. Note that this will modify the environment, which may influence how your program behaves.
+
+You can enable `babel-polyfill` by adding it to AVA's `require` option:
+
+```json
+{
+  "ava": {
+    "require": [
+      "babel-polyfill"
+    ]
   }
 }
 ```
@@ -70,6 +87,8 @@ Using the `"inherit"` shortcut will cause your tests to be transpiled the same a
 
 In the above example, both tests and sources will be transpiled using the [`@ava/stage-4`](https://github.com/avajs/babel-preset-stage-4) and [`react`](http://babeljs.io/docs/plugins/preset-react/) presets.
 
+AVA will only look for a `.babelrc` file in the same directory as the `package.json` file. If not found then it assumes your Babel config lives in the `package.json` file.
+
 ## Extend your source transpilation configuration
 
 When specifying the Babel config for your tests, you can set the `babelrc` option to `true`. This will merge the specified plugins with those from your [`babelrc`](http://babeljs.io/docs/usage/babelrc/).
@@ -94,6 +113,8 @@ When specifying the Babel config for your tests, you can set the `babelrc` optio
 
 In the above example, *sources* are compiled use [`@ava/stage-4`](https://github.com/avajs/babel-preset-stage-4) and [`react`](http://babeljs.io/docs/plugins/preset-react/), *tests* use those same plugins, plus the additional `custom` plugins specified.
 
+AVA will only look for a `.babelrc` file in the same directory as the `package.json` file. If not found then it assumes your Babel config lives in the `package.json` file.
+
 ## Extend an alternate config file.
 
 
@@ -114,14 +135,4 @@ If, for some reason, your Babel config is not specified in one of the default lo
 }
 ```
 
-The above uses `babel-test-config.json` as the transpilition config for *sources*, and as the base config for *tests*. For *tests*, it extends that base config with the custom plugins and presets specified.
-
-## Notes
-
-AVA *always* adds a few custom Babel plugins when transpiling your plugins. They serve a variety of functions:
-
- * Enable `power-assert` support.
- * Rewrite require paths internal AVA dependencies like `babel-runtime` (important if you are still using `npm@2`).
- * [`ava-throws-helper`](https://github.com/avajs/babel-plugin-ava-throws-helper) helps AVA [detect and report](https://github.com/avajs/ava/pull/742) improper use of the `t.throws` assertion.
- * Generate test metadata to determine which files should be run first (*future*).
- * Static analysis of dependencies for precompilation (*future*).
+The above uses `babel-test-config.json` as the transpilation config for *sources*, and as the base config for *tests*. For *tests*, it extends that base config with the custom plugins and presets specified.

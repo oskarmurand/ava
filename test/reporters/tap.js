@@ -34,24 +34,74 @@ test('failing test', t => {
 	const actualOutput = reporter.test({
 		title: 'failing',
 		error: {
+			name: 'AssertionError',
 			message: 'false == true',
+			avaAssertionError: true,
+			assertion: 'true',
 			operator: '==',
-			expected: true,
-			actual: false,
+			values: [{label: 'expected:', formatted: 'true'}, {label: 'actual:', formatted: 'false'}],
 			stack: ['', 'Test.fn (test.js:1:2)'].join('\n')
 		}
 	});
 
-	const expectedOutput = [
-		'# failing',
-		'not ok 1 - failing',
-		'  ---',
-		'    operator: ==',
-		'    expected: true',
-		'    actual: false',
-		'    at: Test.fn (test.js:1:2)',
-		'  ...'
-	].join('\n');
+	const expectedOutput = `# failing
+not ok 1 - failing
+  ---
+    name: AssertionError
+    message: false == true
+    assertion: 'true'
+    operator: ==
+    values:
+      'expected:': 'true'
+      'actual:': 'false'
+    at: 'Test.fn (test.js:1:2)'
+  ...`;
+
+	t.is(actualOutput, expectedOutput);
+	t.end();
+});
+
+test('multiline strings in YAML block', t => {
+	const reporter = new TapReporter();
+
+	const actualOutput = reporter.test({
+		title: 'multiline',
+		error: {
+			object: {
+				foo: 'hello\nworld'
+			}
+		}
+	});
+
+	const expectedOutput = `# multiline
+not ok 1 - multiline
+  ---
+    foo: |-
+      hello
+      world
+  ...`;
+
+	t.is(actualOutput, expectedOutput);
+	t.end();
+});
+
+test('strips ANSI from actual and expected values', t => {
+	const reporter = new TapReporter();
+
+	const actualOutput = reporter.test({
+		title: 'strip ansi',
+		error: {
+			avaAssertionError: true,
+			values: [{label: 'value', formatted: '\u001B[31mhello\u001B[39m'}]
+		}
+	});
+
+	const expectedOutput = `# strip ansi
+not ok 1 - strip ansi
+  ---
+    values:
+      value: hello
+  ...`;
 
 	t.is(actualOutput, expectedOutput);
 	t.end();
@@ -66,14 +116,12 @@ test('unhandled error', t => {
 		stack: ['', 'Test.fn (test.js:1:2)'].join('\n')
 	});
 
-	const expectedOutput = [
-		'# unhandled',
-		'not ok 1 - unhandled',
-		'  ---',
-		'    name: TypeError',
-		'    at: Test.fn (test.js:1:2)',
-		'  ...'
-	].join('\n');
+	const expectedOutput = `# unhandled
+not ok 1 - unhandled
+  ---
+    name: TypeError
+    at: 'Test.fn (test.js:1:2)'
+  ...`;
 
 	t.is(actualOutput, expectedOutput);
 	t.end();
@@ -209,12 +257,12 @@ test('write should call console.log', t => {
 
 test('stdout and stderr should call process.stderr.write', t => {
 	const reporter = new TapReporter();
-	const spy = sinon.spy(process.stderr, 'write');
+	const stub = sinon.stub(process.stderr, 'write');
 
 	reporter.stdout('result');
 	reporter.stderr('result');
 
-	t.is(spy.callCount, 2);
 	process.stderr.write.restore();
+	t.is(stub.callCount, 2);
 	t.end();
 });

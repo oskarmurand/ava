@@ -5,19 +5,15 @@ const childProcess = require('child_process');
 const test = require('tap').test;
 const getStream = require('get-stream');
 const figures = require('figures');
-const chalk = require('chalk');
 const mkdirp = require('mkdirp');
 const touch = require('touch');
 const proxyquire = require('proxyquire');
 const sinon = require('sinon');
 const uniqueTempDir = require('unique-temp-dir');
 const execa = require('execa');
+const stripAnsi = require('strip-ansi');
 
 const cliPath = path.join(__dirname, '../cli.js');
-
-// For some reason chalk is disabled by default
-chalk.enabled = true;
-const colors = require('../lib/colors');
 
 function execCli(args, opts, cb) {
 	let dirname;
@@ -71,12 +67,12 @@ function execCli(args, opts, cb) {
 }
 
 test('disallow invalid babel config shortcuts', t => {
-	execCli('es2015.js', {dirname: 'fixture/invalid-babel-config'}, (err, stdout, stderr) => {
+	execCli(['es2015.js'], {dirname: 'fixture/invalid-babel-config'}, (err, stdout, stderr) => {
 		t.ok(err);
 
 		let expectedOutput = '\n  ';
-		expectedOutput += colors.error(figures.cross) + ' Unexpected Babel configuration for AVA.';
-		expectedOutput += ' See ' + chalk.underline('https://github.com/avajs/ava#es2015-support') + ' for allowed values.';
+		expectedOutput += figures.cross + ' Unexpected Babel configuration for AVA.';
+		expectedOutput += ' See https://github.com/avajs/ava#es2015-support for allowed values.';
 		expectedOutput += '\n';
 
 		t.is(stderr, expectedOutput);
@@ -103,36 +99,102 @@ test('throwing a named function will report the to the console', t => {
 });
 
 test('improper use of t.throws will be reported to the console', t => {
-	execCli('fixture/improper-t-throws.js', (err, stdout, stderr) => {
+	execCli('fixture/improper-t-throws/throws.js', (err, stdout, stderr) => {
 		t.ok(err);
-		t.match(stderr, /Improper usage of t\.throws detected at .*improper-t-throws.js \(4:10\)/);
+		t.match(stderr, /Improper usage of `t\.throws\(\)` detected/);
+		t.match(stderr, /should be detected/);
+		t.match(stderr, /Try wrapping the first argument/);
 		t.end();
 	});
 });
 
 test('improper use of t.throws from within a Promise will be reported to the console', t => {
-	execCli('fixture/improper-t-throws-promise.js', (err, stdout, stderr) => {
+	execCli('fixture/improper-t-throws/promise.js', (err, stdout, stderr) => {
 		t.ok(err);
-		t.match(stderr, /Improper usage of t\.throws detected at .*improper-t-throws-promise.js \(5:11\)/);
+		t.match(stderr, /Improper usage of `t\.throws\(\)` detected/);
+		t.match(stderr, /should be detected/);
+		t.match(stderr, /Try wrapping the first argument/);
+		t.end();
+	});
+});
+
+test('improper use of t.throws from within a pending promise, even if caught and rethrown immediately, will be reported to the console', t => {
+	execCli('fixture/improper-t-throws/leaked-from-promise.js', (err, stdout, stderr) => {
+		t.ok(err);
+		t.match(stderr, /Improper usage of `t\.throws\(\)` detected/);
+		t.match(stderr, /should be detected/);
+		t.match(stderr, /Try wrapping the first argument/);
 		t.end();
 	});
 });
 
 test('improper use of t.throws from within an async callback will be reported to the console', t => {
-	execCli('fixture/improper-t-throws-async-callback.js', (err, stdout, stderr) => {
+	execCli('fixture/improper-t-throws/async-callback.js', (err, stdout, stderr) => {
 		t.ok(err);
-		t.match(stderr, /Improper usage of t\.throws detected at .*improper-t-throws-async-callback.js \(5:11\)/);
+		t.match(stderr, /Improper usage of `t\.throws\(\)` detected/);
+		t.match(stderr, /should be detected/);
+		t.match(stderr, /Try wrapping the first argument/);
 		t.end();
 	});
 });
 
-test('babel require hook only applies to the test file', t => {
+test('improper use of t.throws, swallowed as an unhandled rejection, will be reported to the console', t => {
+	execCli('fixture/improper-t-throws/unhandled-rejection.js', (err, stdout, stderr) => {
+		t.ok(err);
+		t.match(stderr, /Improper usage of `t\.throws\(\)` detected/);
+		t.match(stderr, /should be detected/);
+		t.match(stderr, /Try wrapping the first argument/);
+		t.end();
+	});
+});
+
+test('improper use of t.throws, even if caught, will be reported to the console', t => {
+	execCli('fixture/improper-t-throws/caught.js', (err, stdout, stderr) => {
+		t.ok(err);
+		t.match(stderr, /Improper usage of `t\.throws\(\)` detected/);
+		t.notMatch(stderr, /should be detected/);
+		t.match(stderr, /Try wrapping the first argument/);
+		t.end();
+	});
+});
+
+test('improper use of t.throws, even if caught and then rethrown immediately, will be reported to the console', t => {
+	execCli('fixture/improper-t-throws/caught-and-leaked.js', (err, stdout, stderr) => {
+		t.ok(err);
+		t.match(stderr, /Improper usage of `t\.throws\(\)` detected/);
+		t.match(stderr, /should be detected/);
+		t.match(stderr, /Try wrapping the first argument/);
+		t.end();
+	});
+});
+
+test('improper use of t.throws, even if caught and then later rethrown, will be reported to the console', t => {
+	execCli('fixture/improper-t-throws/caught-and-leaked-slowly.js', (err, stdout, stderr) => {
+		t.ok(err);
+		t.match(stderr, /Improper usage of `t\.throws\(\)` detected/);
+		t.match(stderr, /should be detected/);
+		t.match(stderr, /Try wrapping the first argument/);
+		t.end();
+	});
+});
+
+test('improper use of t.throws, even if caught and then rethrown too slowly, will be reported to the console', t => {
+	execCli('fixture/improper-t-throws/caught-and-leaked-too-slowly.js', (err, stdout, stderr) => {
+		t.ok(err);
+		t.match(stderr, /Improper usage of `t\.throws\(\)` detected/);
+		t.notMatch(stderr, /should be detected/);
+		t.match(stderr, /Try wrapping the first argument/);
+		t.end();
+	});
+});
+
+test('babel require hook only does not apply to source files', t => {
 	t.plan(3);
 
 	execCli('fixture/babel-hook.js', (err, stdout, stderr) => {
 		t.ok(err);
 		t.is(err.code, 1);
-		t.match(stderr, /Unexpected token/);
+		t.match(stderr, /Unexpected (token|reserved word)/);
 		t.end();
 	});
 });
@@ -143,14 +205,6 @@ test('throwing a anonymous function will report the function to the console', t 
 		t.match(stderr, /\(\) => \{\}/);
 		// TODO(jamestalmage)
 		// t.ok(/1 uncaught exception[^s]/.test(stdout));
-		t.end();
-	});
-});
-
-test('log failed tests', t => {
-	execCli('fixture/one-pass-one-fail.js', (err, stdout, stderr) => {
-		t.ok(err);
-		t.match(stderr, /failed via t.fail\(\)/);
 		t.end();
 	});
 });
@@ -406,6 +460,85 @@ test('workers ensure test files load the same version of ava', t => {
 	const testFile = path.join(target, 'test.js');
 	execCli([testFile], {dirname: path.join('fixture', 'ava-paths', 'cwd')}, err => {
 		t.ifError(err);
+		t.end();
+	});
+});
+
+test('worker errors are treated as uncaught exceptions', t => {
+	execCli(['--no-color', '--verbose', 'test.js'], {dirname: 'fixture/trigger-worker-exception'}, (_, __, stderr) => {
+		t.match(stderr, /Forced error/);
+		t.end();
+	});
+});
+
+test('uncaught exceptions are raised for worker errors even if the error cannot be serialized', t => {
+	execCli(['--no-color', '--verbose', 'test-fallback.js'], {dirname: 'fixture/trigger-worker-exception'}, (_, __, stderr) => {
+		t.match(stderr, /Failed to serialize uncaught exception/);
+		t.end();
+	});
+});
+
+test('tests without assertions do not fail if failWithoutAssertions option is set to false', t => {
+	execCli([], {dirname: 'fixture/pkg-conf/fail-without-assertions'}, err => {
+		t.ifError(err);
+		t.end();
+	});
+});
+
+test('callback tests fail if event loop empties before they\'re ended', t => {
+	execCli('callback.js', {dirname: 'fixture/stalled-tests'}, (_, __, stderr) => {
+		t.match(stderr, /`t\.end\(\)` was never called/);
+		t.end();
+	});
+});
+
+test('observable tests fail if event loop empties before they\'re resolved', t => {
+	execCli('observable.js', {dirname: 'fixture/stalled-tests'}, (_, __, stderr) => {
+		t.match(stderr, /Observable returned by test never completed/);
+		t.end();
+	});
+});
+
+test('promise tests fail if event loop empties before they\'re resolved', t => {
+	execCli('promise.js', {dirname: 'fixture/stalled-tests'}, (_, __, stderr) => {
+		t.match(stderr, /Promise returned by test never resolved/);
+		t.end();
+	});
+});
+
+test('snapshots work', t => {
+	try {
+		fs.unlinkSync(path.join(__dirname, 'fixture', 'snapshots', '__snapshots__', 'test.snap'));
+	} catch (err) {
+		if (err.code !== 'ENOENT') {
+			throw err;
+		}
+	}
+
+	// Test should pass, and a snapshot gets written
+	execCli(['--update-snapshots', 'test.js'], {dirname: 'fixture/snapshots'}, err => {
+		t.ifError(err);
+
+		// Test should pass, and the snapshot gets used
+		execCli(['test.js'], {dirname: 'fixture/snapshots'}, err => {
+			t.ifError(err);
+			t.end();
+		});
+	});
+});
+
+test('--no-color disables formatting colors', t => {
+	execCli(['--no-color', '--verbose', 'formatting-color.js'], {dirname: 'fixture'}, (err, stdout, stderr) => {
+		t.ok(err);
+		t.is(stripAnsi(stderr), stderr);
+		t.end();
+	});
+});
+
+test('--color enables formatting colors', t => {
+	execCli(['--color', '--verbose', 'formatting-color.js'], {dirname: 'fixture'}, (err, stdout, stderr) => {
+		t.ok(err);
+		t.isNot(stripAnsi(stderr), stderr);
 		t.end();
 	});
 });

@@ -4,31 +4,35 @@ const fs = require('fs');
 const figures = require('figures');
 const rimraf = require('rimraf');
 const test = require('tap').test;
-const pkgConf = require('pkg-conf');
 const Api = require('../api');
-const testCapitalizerPlugin = require('./fixture/babel-plugin-test-capitalizer');
+const testCapitalizerPlugin = require.resolve('./fixture/babel-plugin-test-capitalizer');
 
-const conf = pkgConf.sync('ava');
-const pkgDir = path.dirname(pkgConf.filepath(conf));
+const ROOT_DIR = path.join(__dirname, '..');
 
-generateTests('Without Pool: ', options => {
+function apiCreator(options) {
 	options = options || {};
+	options.babelConfig = options.babelConfig || 'default';
 	options.powerAssert = true;
-	options.pkgDir = options.pkgDir || pkgDir;
-	return new Api(options);
-});
+	options.projectDir = options.projectDir || ROOT_DIR;
+	options.resolveTestsFrom = options.resolveTestsFrom || options.projectDir;
+	const instance = new Api(options);
+	if (!options.precompileHelpers) {
+		instance._precompileHelpers = () => Promise.resolve();
+	}
+	return instance;
+}
+
+generateTests('Without Pool:', options => apiCreator(options || {}));
 
 // The following two tests are only run against "Without Pool" behavior as they test the exclusive test features. These features are currently not expected to work correctly in the limited process pool. When the limited process pool behavior is finalized this test file will be updated. See: https://github.com/avajs/ava/pull/791#issuecomment-216293302
 test('Without Pool: test file with exclusive tests causes non-exclusive tests in other files to be ignored', t => {
-	t.plan(4);
-
 	const files = [
 		path.join(__dirname, 'fixture/exclusive.js'),
 		path.join(__dirname, 'fixture/exclusive-nonexclusive.js'),
 		path.join(__dirname, 'fixture/one-pass-one-fail.js')
 	];
 
-	const api = new Api();
+	const api = apiCreator({});
 
 	return api.run(files)
 		.then(result => {
@@ -40,9 +44,7 @@ test('Without Pool: test file with exclusive tests causes non-exclusive tests in
 });
 
 test('Without Pool: test files can be forced to run in exclusive mode', t => {
-	t.plan(4);
-
-	const api = new Api();
+	const api = apiCreator();
 	return api.run(
 		[path.join(__dirname, 'fixture/es2015.js')],
 		{runOnlyExclusive: true}
@@ -54,18 +56,14 @@ test('Without Pool: test files can be forced to run in exclusive mode', t => {
 	});
 });
 
-generateTests('With Pool: ', options => {
+generateTests('With Pool:', options => {
 	options = options || {};
 	options.concurrency = 2;
-	options.powerAssert = true;
-	options.pkgDir = options.pkgDir || pkgDir;
-	return new Api(options);
+	return apiCreator(options);
 });
 
 function generateTests(prefix, apiCreator) {
 	test(`${prefix} ES2015 support`, t => {
-		t.plan(1);
-
 		const api = apiCreator();
 
 		return api.run([path.join(__dirname, 'fixture/es2015.js')])
@@ -75,19 +73,18 @@ function generateTests(prefix, apiCreator) {
 	});
 
 	test(`${prefix} precompile helpers`, t => {
-		t.plan(1);
+		const api = apiCreator({
+			precompileHelpers: true,
+			resolveTestsFrom: path.join(__dirname, 'fixture/precompile-helpers')
+		});
 
-		const api = apiCreator();
-
-		return api.run([path.join(__dirname, 'fixture/precompile-helpers/test/test.js')])
+		return api.run()
 			.then(result => {
 				t.is(result.passCount, 1);
 			});
 	});
 
 	test(`${prefix} generators support`, t => {
-		t.plan(1);
-
 		const api = apiCreator();
 
 		return api.run([path.join(__dirname, 'fixture/generators.js')])
@@ -97,8 +94,6 @@ function generateTests(prefix, apiCreator) {
 	});
 
 	test(`${prefix} async/await support`, t => {
-		t.plan(1);
-
 		const api = apiCreator();
 
 		return api.run([path.join(__dirname, 'fixture/async-await.js')])
@@ -216,8 +211,6 @@ function generateTests(prefix, apiCreator) {
 	});
 
 	test(`${prefix} display filename prefixes for failed test stack traces`, t => {
-		t.plan(3);
-
 		const files = [
 			path.join(__dirname, 'fixture/es2015.js'),
 			path.join(__dirname, 'fixture/one-pass-one-fail.js')
@@ -236,8 +229,6 @@ function generateTests(prefix, apiCreator) {
 	// This is a seperate test because we can't ensure the order of the errors (to match them), and this is easier than
 	// sorting.
 	test(`${prefix} display filename prefixes for failed test stack traces in subdirs`, t => {
-		t.plan(3);
-
 		const files = [
 			path.join(__dirname, 'fixture/es2015.js'),
 			path.join(__dirname, 'fixture/subdir/failing-subdir.js')
@@ -254,8 +245,6 @@ function generateTests(prefix, apiCreator) {
 	});
 
 	test(`${prefix} fail-fast mode`, t => {
-		t.plan(5);
-
 		const api = apiCreator({
 			failFast: true
 		});
@@ -283,13 +272,10 @@ function generateTests(prefix, apiCreator) {
 				}]);
 				t.is(result.passCount, 1);
 				t.is(result.failCount, 1);
-				t.match(result.errors[0].error.message, /Test failed via t.fail()/);
 			});
 	});
 
 	test(`${prefix} serial execution mode`, t => {
-		t.plan(3);
-
 		const api = apiCreator({
 			serial: true
 		});
@@ -303,8 +289,6 @@ function generateTests(prefix, apiCreator) {
 	});
 
 	test(`${prefix} circular references on assertions do not break process.send`, t => {
-		t.plan(1);
-
 		const api = apiCreator();
 
 		return api.run([path.join(__dirname, 'fixture/circular-reference-on-assertion.js')])
@@ -314,7 +298,6 @@ function generateTests(prefix, apiCreator) {
 	});
 
 	test(`${prefix} run from package.json folder by default`, t => {
-		t.plan(1);
 		const api = apiCreator();
 
 		return api.run([path.join(__dirname, 'fixture/process-cwd-default.js')])
@@ -323,11 +306,9 @@ function generateTests(prefix, apiCreator) {
 			});
 	});
 
-	test(`${prefix} change process.cwd() to a test's directory with pkgDir`, t => {
-		t.plan(1);
-
+	test(`${prefix} control worker's process.cwd() with projectDir option`, t => {
 		const fullPath = path.join(__dirname, 'fixture/process-cwd-pkgdir.js');
-		const api = apiCreator({pkgDir: path.dirname(fullPath)});
+		const api = apiCreator({projectDir: path.dirname(fullPath)});
 
 		return api.run([fullPath])
 			.then(result => {
@@ -372,8 +353,6 @@ function generateTests(prefix, apiCreator) {
 	});
 
 	test(`${prefix} errors can occur without messages`, t => {
-		t.plan(2);
-
 		const api = apiCreator();
 
 		return api.run([path.join(__dirname, 'fixture/error-without-message.js')])
@@ -394,7 +373,7 @@ function generateTests(prefix, apiCreator) {
 			runStatus.on('error', data => {
 				t.match(data.message, /Thrown by source-map-fixtures/);
 				t.match(data.stack, /^.*?Object\.t.*?as run\b.*source-map-fixtures.src.throws.js:1.*$/m);
-				t.match(data.stack, /^.*?Immediate\b.*source-map-file.js:11.*$/m);
+				t.match(data.stack, /^.*?Immediate\b.*source-map-file.js:12.*$/m);
 			});
 		});
 
@@ -415,7 +394,7 @@ function generateTests(prefix, apiCreator) {
 			runStatus.on('error', data => {
 				t.match(data.message, /Thrown by source-map-fixtures/);
 				t.match(data.stack, /^.*?Object\.t.*?as run\b.*source-map-fixtures.src.throws.js:1.*$/m);
-				t.match(data.stack, /^.*?Immediate\b.*source-map-file-browser-env.js:14.*$/m);
+				t.match(data.stack, /^.*?Immediate\b.*source-map-file-browser-env.js:15.*$/m);
 			});
 		});
 
@@ -436,7 +415,7 @@ function generateTests(prefix, apiCreator) {
 			runStatus.on('error', data => {
 				t.match(data.message, /Thrown by source-map-fixtures/);
 				t.match(data.stack, /^.*?Object\.t.*?as run\b.*source-map-fixtures.src.throws.js:1.*$/m);
-				t.match(data.stack, /^.*?Immediate\b.*source-map-file.js:11.*$/m);
+				t.match(data.stack, /^.*?Immediate\b.*source-map-file.js:12.*$/m);
 			});
 		});
 
@@ -457,7 +436,7 @@ function generateTests(prefix, apiCreator) {
 			runStatus.on('error', data => {
 				t.match(data.message, /Thrown by source-map-fixtures/);
 				t.match(data.stack, /^.*?Object\.t.*?as run\b.*source-map-fixtures.src.throws.js:1.*$/m);
-				t.match(data.stack, /^.*?Immediate\b.*source-map-initial-input.js:7.*$/m);
+				t.match(data.stack, /^.*?Immediate\b.*source-map-initial-input.js:14.*$/m);
 			});
 		});
 
@@ -478,7 +457,7 @@ function generateTests(prefix, apiCreator) {
 			runStatus.on('error', data => {
 				t.match(data.message, /Thrown by source-map-fixtures/);
 				t.match(data.stack, /^.*?Object\.t.*?as run\b.*source-map-fixtures.src.throws.js:1.*$/m);
-				t.match(data.stack, /^.*?Immediate\b.*source-map-initial-input.js:7.*$/m);
+				t.match(data.stack, /^.*?Immediate\b.*source-map-initial-input.js:14.*$/m);
 			});
 		});
 
@@ -489,8 +468,6 @@ function generateTests(prefix, apiCreator) {
 	});
 
 	test(`${prefix} absolute paths`, t => {
-		t.plan(1);
-
 		const api = apiCreator();
 
 		return api.run([path.resolve('test/fixture/es2015.js')])
@@ -500,8 +477,6 @@ function generateTests(prefix, apiCreator) {
 	});
 
 	test(`${prefix} symlink to directory containing test files`, t => {
-		t.plan(1);
-
 		const api = apiCreator();
 
 		return api.run([path.join(__dirname, 'fixture/symlink')])
@@ -511,8 +486,6 @@ function generateTests(prefix, apiCreator) {
 	});
 
 	test(`${prefix} symlink to test file directly`, t => {
-		t.plan(1);
-
 		const api = apiCreator();
 
 		return api.run([path.join(__dirname, 'fixture/symlinkfile.js')])
@@ -522,8 +495,6 @@ function generateTests(prefix, apiCreator) {
 	});
 
 	test(`${prefix} search directories recursively for files`, t => {
-		t.plan(2);
-
 		const api = apiCreator();
 
 		return api.run([path.join(__dirname, 'fixture/subdir')])
@@ -534,8 +505,6 @@ function generateTests(prefix, apiCreator) {
 	});
 
 	test(`${prefix} titles of both passing and failing tests and AssertionErrors are returned`, t => {
-		t.plan(3);
-
 		const api = apiCreator();
 
 		return api.run([path.join(__dirname, 'fixture/one-pass-one-fail.js')])
@@ -668,8 +637,6 @@ function generateTests(prefix, apiCreator) {
 	});
 
 	test(`${prefix} Node.js-style --require CLI argument`, t => {
-		t.plan(1);
-
 		const requirePath = './' + path.relative('.', path.join(__dirname, 'fixture/install-global.js')).replace(/\\/g, '/');
 
 		const api = apiCreator({
@@ -683,16 +650,14 @@ function generateTests(prefix, apiCreator) {
 	});
 
 	test(`${prefix} Node.js-style --require CLI argument module not found`, t => {
-		t.plan(1);
-
 		t.throws(() => {
 			/* eslint no-new: 0 */
 			apiCreator({require: ['foo-bar']});
 		}, /^Could not resolve required module 'foo-bar'$/);
+		t.end();
 	});
 
 	test(`${prefix} caching is enabled by default`, t => {
-		t.plan(3);
 		rimraf.sync(path.join(__dirname, 'fixture/caching/node_modules'));
 
 		const api = apiCreator({
@@ -702,11 +667,15 @@ function generateTests(prefix, apiCreator) {
 		return api.run([path.join(__dirname, 'fixture/caching/test.js')])
 			.then(() => {
 				const files = fs.readdirSync(path.join(__dirname, 'fixture/caching/node_modules/.cache/ava'));
-				t.is(files.length, 2);
-				t.is(files.filter(endsWithJs).length, 1);
+				t.ok(files.length, 4);
+				t.is(files.filter(endsWithBin).length, 1);
+				t.is(files.filter(endsWithJs).length, 2);
 				t.is(files.filter(endsWithMap).length, 1);
-				t.end();
 			});
+
+		function endsWithBin(filename) {
+			return /\.bin$/.test(filename);
+		}
 
 		function endsWithJs(filename) {
 			return /\.js$/.test(filename);
@@ -718,7 +687,6 @@ function generateTests(prefix, apiCreator) {
 	});
 
 	test(`${prefix} caching can be disabled`, t => {
-		t.plan(1);
 		rimraf.sync(path.join(__dirname, 'fixture/caching/node_modules'));
 
 		const api = apiCreator({
@@ -729,13 +697,10 @@ function generateTests(prefix, apiCreator) {
 		return api.run([path.join(__dirname, 'fixture/caching/test.js')])
 			.then(() => {
 				t.false(fs.existsSync(path.join(__dirname, 'fixture/caching/node_modules/.cache/ava')));
-				t.end();
 			});
 	});
 
 	test(`${prefix} test file with only skipped tests does not create a failure`, t => {
-		t.plan(2);
-
 		const api = apiCreator();
 
 		return api.run([path.join(__dirname, 'fixture/skip-only.js')])
@@ -746,8 +711,6 @@ function generateTests(prefix, apiCreator) {
 	});
 
 	test(`${prefix} resets state before running`, t => {
-		t.plan(2);
-
 		const api = apiCreator();
 
 		return api.run([path.resolve('test/fixture/es2015.js')]).then(result => {
@@ -761,7 +724,7 @@ function generateTests(prefix, apiCreator) {
 	test(`${prefix} emits dependencies for test files`, t => {
 		t.plan(8);
 
-		const api = new Api({
+		const api = apiCreator({
 			require: [path.resolve('test/fixture/with-dependencies/require-custom.js')]
 		});
 
@@ -847,7 +810,8 @@ function generateTests(prefix, apiCreator) {
 				presets: ['@ava/stage-4'],
 				plugins: [testCapitalizerPlugin]
 			},
-			cacheEnabled: false
+			cacheEnabled: false,
+			projectDir: __dirname
 		});
 
 		api.on('test-run', runStatus => {
@@ -865,7 +829,9 @@ function generateTests(prefix, apiCreator) {
 	test(`${prefix} Default babel config doesn't use .babelrc`, t => {
 		t.plan(2);
 
-		const api = apiCreator();
+		const api = apiCreator({
+			projectDir: path.join(__dirname, 'fixture/babelrc')
+		});
 
 		api.on('test-run', runStatus => {
 			runStatus.on('test', data => {
@@ -873,7 +839,7 @@ function generateTests(prefix, apiCreator) {
 			});
 		});
 
-		return api.run([path.join(__dirname, 'fixture/babelrc/test.js')])
+		return api.run()
 			.then(result => {
 				t.is(result.passCount, 1);
 			});
@@ -884,7 +850,8 @@ function generateTests(prefix, apiCreator) {
 
 		const api = apiCreator({
 			babelConfig: 'inherit',
-			cacheEnabled: false
+			cacheEnabled: false,
+			projectDir: path.join(__dirname, 'fixture/babelrc')
 		});
 
 		api.on('test-run', runStatus => {
@@ -893,7 +860,7 @@ function generateTests(prefix, apiCreator) {
 			});
 		});
 
-		return api.run([path.join(__dirname, 'fixture/babelrc/test.js')])
+		return api.run()
 			.then(result => {
 				t.is(result.passCount, 2);
 			});
@@ -904,16 +871,17 @@ function generateTests(prefix, apiCreator) {
 
 		const api = apiCreator({
 			babelConfig: {babelrc: true},
-			cacheEnabled: false
+			cacheEnabled: false,
+			projectDir: path.join(__dirname, 'fixture/babelrc')
 		});
 
 		api.on('test-run', runStatus => {
 			runStatus.on('test', data => {
-				t.ok((data.title === 'foo') || (data.title === 'repeated test: foo'));
+				t.ok(data.title === 'foo' || data.title === 'repeated test: foo');
 			});
 		});
 
-		return api.run([path.join(__dirname, 'fixture/babelrc/test.js')])
+		return api.run()
 			.then(result => {
 				t.is(result.passCount, 2);
 			});
@@ -927,41 +895,43 @@ function generateTests(prefix, apiCreator) {
 				plugins: [testCapitalizerPlugin],
 				babelrc: true
 			},
-			cacheEnabled: false
+			cacheEnabled: false,
+			projectDir: path.join(__dirname, 'fixture/babelrc')
 		});
 
 		api.on('test-run', runStatus => {
 			runStatus.on('test', data => {
-				t.ok((data.title === 'FOO') || /^repeated test:/.test(data.title));
+				t.ok(data.title === 'FOO' || data.title === 'repeated test: FOO');
 			});
 		});
 
-		return api.run([path.join(__dirname, 'fixture/babelrc/test.js')])
+		return api.run()
 			.then(result => {
 				t.is(result.passCount, 2);
 			});
 	});
 
 	test(`${prefix} babelConfig:{extends:path, plugins:[...]} merges plugins with .babelrc`, t => {
-		t.plan(2);
+		t.plan(3);
 
-		const api = new Api({
+		const api = apiCreator({
 			babelConfig: {
 				plugins: [testCapitalizerPlugin],
 				extends: path.join(__dirname, 'fixture/babelrc/.alt-babelrc')
 			},
-			cacheEnabled: false
+			cacheEnabled: false,
+			projectDir: path.join(__dirname, 'fixture/babelrc')
 		});
 
 		api.on('test-run', runStatus => {
 			runStatus.on('test', data => {
-				t.is(data.title, 'BAR');
+				t.ok(data.title === 'BAR' || data.title === 'repeated test: BAR');
 			});
 		});
 
-		return api.run([path.join(__dirname, 'fixture/babelrc/test.js')])
+		return api.run()
 			.then(result => {
-				t.is(result.passCount, 1);
+				t.is(result.passCount, 2);
 			});
 	});
 
@@ -1038,9 +1008,7 @@ function generateTests(prefix, apiCreator) {
 
 function generatePassDebugTests(execArgv, expectedInspectIndex) {
 	test(`pass ${execArgv.join(' ')} to fork`, t => {
-		t.plan(expectedInspectIndex === -1 ? 3 : 2);
-
-		const api = new Api({testOnlyExecArgv: execArgv});
+		const api = apiCreator({testOnlyExecArgv: execArgv});
 		return api._computeForkExecArgs(['foo.js'])
 			.then(result => {
 				t.true(result.length === 1);
@@ -1056,9 +1024,7 @@ function generatePassDebugTests(execArgv, expectedInspectIndex) {
 
 function generatePassDebugIntegrationTests(execArgv) {
 	test(`pass ${execArgv.join(' ')} to fork`, t => {
-		t.plan(1);
-
-		const api = new Api({testOnlyExecArgv: execArgv});
+		const api = apiCreator({testOnlyExecArgv: execArgv});
 		return api.run([path.join(__dirname, 'fixture/debug-arg.js')])
 			.then(result => {
 				t.is(result.passCount, 1);

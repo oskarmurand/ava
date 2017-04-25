@@ -86,4 +86,3 @@ test('calculate remaining test count', t => {
 	t.is(runStatus.remainingCount, 5);
 	t.end();
 });
-

@@ -4,7 +4,7 @@
 
 [![Build Status: Linux](https://travis-ci.org/avajs/ava.svg?branch=master)](https://travis-ci.org/avajs/ava) [![Build status: Windows](https://ci.appveyor.com/api/projects/status/e7v91mu2m5x48ehx/branch/master?svg=true)](https://ci.appveyor.com/project/ava/ava/branch/master) [![Coverage Status](https://coveralls.io/repos/github/avajs/ava/badge.svg?branch=master)](https://coveralls.io/github/avajs/ava?branch=master) [![Dependency Status](https://dependencyci.com/github/avajs/ava/badge)](https://dependencyci.com/github/avajs/ava) [![XO code style](https://img.shields.io/badge/code_style-XO-5ed9c7.svg)](https://github.com/sindresorhus/xo) [![Gitter](https://badges.gitter.im/join_chat.svg)](https://gitter.im/avajs/ava)
 
-Even though JavaScript is single-threaded, IO in Node.js can happen in parallel due to its async nature. AVA takes advantage of this and runs your tests concurrently, which is especially beneficial for IO heavy tests. In addition, test files are run in parallel as separate processes, giving you even better performance and an isolated environment for each test file. [Switching](https://github.com/sindresorhus/pageres/commit/663be15acb3dd2eb0f71b1956ef28c2cd3fdeed0) from Mocha to AVA in Pageres brought the test time down from 31 sec to 11 sec. Having tests run concurrently forces you to write atomic tests, meaning tests don't depend on global state or the state of other tests, which is a great thing!
+Even though JavaScript is single-threaded, IO in Node.js can happen in parallel due to its async nature. AVA takes advantage of this and runs your tests concurrently, which is especially beneficial for IO heavy tests. In addition, test files are run in parallel as separate processes, giving you even better performance and an isolated environment for each test file. [Switching](https://github.com/sindresorhus/pageres/commit/663be15acb3dd2eb0f71b1956ef28c2cd3fdeed0) from Mocha to AVA in Pageres brought the test time down from 31 to 11 seconds. Having tests run concurrently forces you to write atomic tests, meaning tests don't depend on global state or the state of other tests, which is a great thing!
 
 ![](media/screenshot-mini-reporter.gif)
 
@@ -42,6 +42,7 @@ Translations: [Español](https://github.com/avajs/ava-docs/blob/master/es_ES/rea
 - Runs tests concurrently
 - Enforces writing atomic tests
 - No implicit globals
+- Includes TypeScript & Flow type definitions
 - [Magic assert](#magic-assert)
 - [Isolated environment for each test file](#process-isolation)
 - [Write your tests in ES2017](#es2017-support)
@@ -163,6 +164,8 @@ $ ava --help
     --verbose, -v           Enable verbose output
     --no-cache              Disable the transpiler cache
     --no-power-assert       Disable Power Assert
+    --color                 Force color output
+    --no-color              Disable color output
     --match, -m             Only run tests with matching title (Can be repeated)
     --watch, -w             Re-run tests when tests and source files change
     --timeout, -T           Set global timeout
@@ -260,6 +263,7 @@ All of the CLI options can be configured in the `ava` section of your `package.j
     ],
     "concurrency": 5,
     "failFast": true,
+    "failWithoutAssertions": false,
     "tap": true,
     "powerAssert": false,
     "require": [
@@ -323,6 +327,8 @@ test(function name(t) {
 ### Assertion planning
 
 Assertion plans ensure tests only pass when a specific number of assertions have been executed. They'll help you catch cases where tests exit too early. They'll also cause tests to fail if too many assertions are executed, which can be useful if you have assertions inside callbacks or loops.
+
+If you do not specify an assertion plan, your test will still fail if no assertions are executed. Set the `failWithoutAssertions` option to `false` in AVA's [`package.json` configuration](#configuration) to disable this behavior.
 
 Note that, unlike [`tap`](https://www.npmjs.com/package/tap) and [`tape`](https://www.npmjs.com/package/tape), AVA does *not* automatically end a test when the planned assertion count is reached.
 
@@ -576,6 +582,8 @@ Keep in mind that the `beforeEach` and `afterEach` hooks run just before and aft
 
 Remember that AVA runs each test file in its own process. You may not have to clean up global state in a `after`-hook since that's only called right before the process exits.
 
+#### Test context
+
 The `beforeEach` & `afterEach` hooks can share context with the test:
 
 ```js
@@ -669,6 +677,8 @@ You can use any assertion library instead of or in addition to the built-in one,
 
 This won't give you as nice an experience as you'd get with the [built-in assertions](#assertions) though, and you won't be able to use the [assertion planning](#assertion-planning) ([see #25](https://github.com/avajs/ava/issues/25)).
 
+You'll have to configure AVA to not fail tests if no assertions are executed, because AVA can't tell if custom assertions pass. Set the `failWithoutAssertions` option to `false` in AVA's [`package.json` configuration](#configuration).
+
 ```js
 import assert from 'assert';
 
@@ -679,7 +689,7 @@ test(t => {
 
 ### ES2017 support
 
-AVA comes with built-in support for ES2017 through [Babel 6](https://babeljs.io). Just write your tests in ES2017. No extra setup needed. You can use any Babel version in your project. We use our own bundled Babel with our [`@ava/stage-4`](https://github.com/avajs/babel-preset-stage-4) and [`stage-2`](https://babeljs.io/docs/plugins/preset-stage-2/) preset, as well as [custom transforms](https://github.com/avajs/babel-preset-transform-test-files) for test and helper files.
+AVA comes with built-in support for ES2017 through [Babel 6](https://babeljs.io). Just write your tests in ES2017. No extra setup needed. You can use any Babel version in your project. We use our own bundled Babel with our [`@ava/stage-4`](https://github.com/avajs/babel-preset-stage-4) preset, as well as [custom transforms](https://github.com/avajs/babel-preset-transform-test-files) for test and helper files.
 
 The corresponding Babel config for AVA's setup is as follows:
 
@@ -741,7 +751,7 @@ AVA currently only transpiles the tests you ask it to run, as well as test helpe
 
 If you use Babel you can use its [require hook](https://babeljs.io/docs/usage/require/) to transpile imported modules on-the-fly. To add it, [configure it in your `package.json`](#configuration).
 
-You can also transpile your modules in a separate process and refer to the transpiled files rather than the sources from your tests.
+You can also transpile your modules in a separate process and refer to the transpiled files rather than the sources from your tests. Example [here](docs/recipes/precompiling-with-webpack.md).
 
 ### Promise support
 
@@ -912,11 +922,15 @@ Assert that `value` is not equal to `expected`.
 
 ### `.deepEqual(value, expected, [message])`
 
-Assert that `value` is deep equal to `expected`.
+Assert that `value` is deep equal to `expected`. This is based on [Lodash' `isEqual()`](https://lodash.com/docs/4.17.4#isEqual):
+
+> Performs a deep comparison between two values to determine if they are equivalent.
+>
+> *Note*: This method supports comparing arrays, array buffers, booleans, date objects, error objects, maps, numbers, `Object` objects, regexes, sets, strings, symbols, and typed arrays. `Object` objects are compared by their own, not inherited, enumerable properties. Functions and DOM nodes are compared by strict equality, i.e. `===`.
 
 ### `.notDeepEqual(value, expected, [message])`
 
-Assert that `value` is not deep equal to `expected`.
+Assert that `value` is not deep equal to `expected`. The inverse of `.deepEqual()`.
 
 ### `.throws(function|promise, [error, [message]])`
 
@@ -951,9 +965,25 @@ test('rejects', async t => {
 });
 ```
 
+When testing a promise you must wait for the assertion to complete:
+
+```js
+test('rejects', async t => {
+	await t.throws(promise);
+});
+```
+
 ### `.notThrows(function|promise, [message])`
 
 Assert that `function` does not throw an error or that `promise` does not reject with an error.
+
+Like the `.throws()` assertion, when testing a promise you must wait for the assertion to complete:
+
+```js
+test('rejects', async t => {
+	await t.notThrows(promise);
+});
+```
 
 ### `.regex(contents, regex, [message])`
 
@@ -1131,6 +1161,7 @@ It's the [Andromeda galaxy](https://simple.wikipedia.org/wiki/Andromeda_galaxy).
 - [JSPM and SystemJS](docs/recipes/jspm-systemjs.md)
 - [Debugging tests with Chrome DevTools](docs/recipes/debugging-with-chrome-devtools.md)
 - [Debugging tests with WebStorm](docs/recipes/debugging-with-webstorm.md)
+- [Precompiling source files with webpack](docs/recipes/precompiling-with-webpack.md)
 
 ## Support
 
@@ -1158,7 +1189,7 @@ It's the [Andromeda galaxy](https://simple.wikipedia.org/wiki/Andromeda_galaxy).
 ## Team
 
 [![Sindre Sorhus](https://avatars.githubusercontent.com/u/170270?s=130)](http://sindresorhus.com) | [![Vadim Demedes](https://avatars.githubusercontent.com/u/697676?s=130)](https://github.com/vadimdemedes) | [![James Talmage](https://avatars.githubusercontent.com/u/4082216?s=130)](https://github.com/jamestalmage) | [![Mark Wubben](https://avatars.githubusercontent.com/u/33538?s=130)](https://novemberborn.net) | [![Juan Soto](https://avatars.githubusercontent.com/u/8217766?s=130)](https://juansoto.me) | [![Jeroen Engels](https://avatars.githubusercontent.com/u/3869412?s=130)](https://github.com/jfmengels)
----|---|---|---|---|---|---
+---|---|---|---|---|---
 [Sindre Sorhus](http://sindresorhus.com) | [Vadim Demedes](https://github.com/vadimdemedes) | [James Talmage](https://github.com/jamestalmage) | [Mark Wubben](https://novemberborn.net) | [Juan Soto](http://juansoto.me) | [Jeroen Engels](https://github.com/jfmengels)
 
 ### Former

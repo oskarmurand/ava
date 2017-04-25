@@ -1,5 +1,4 @@
 'use strict';
-const path = require('path');
 const indentString = require('indent-string');
 const tempWrite = require('temp-write');
 const flatten = require('arr-flatten');
@@ -13,7 +12,7 @@ const MiniReporter = require('../../lib/reporters/mini');
 const beautifyStack = require('../../lib/beautify-stack');
 const colors = require('../../lib/colors');
 const compareLineOutput = require('../helper/compare-line-output');
-const formatAssertError = require('../../lib/format-assert-error');
+const formatSerializedError = require('../../lib/format-assert-error').formatSerializedError;
 const codeExcerpt = require('../../lib/code-excerpt');
 
 chalk.enabled = true;
@@ -27,15 +26,27 @@ process.stdout.columns = 5000;
 const fullWidthLine = chalk.gray.dim('\u2500'.repeat(5000));
 
 function miniReporter(options) {
+	if (options === undefined) {
+		options = {color: true};
+	}
 	const reporter = new MiniReporter(options);
 	reporter.start = () => '';
 	return reporter;
 }
 
+function source(file, line) {
+	return {
+		file,
+		line: line || 1,
+		isWithinProject: true,
+		isDependency: false
+	};
+}
+
 process.stderr.setMaxListeners(50);
 
 test('start', t => {
-	const reporter = new MiniReporter();
+	const reporter = new MiniReporter({color: true});
 
 	t.is(reporter.start(), ' \n ' + graySpinner + ' ');
 	reporter.clearInterval();
@@ -351,24 +362,26 @@ test('results with errors', t => {
 	const err1 = new Error('failure one');
 	err1.stack = beautifyStack(err1.stack);
 	const err1Path = tempWrite.sync('a();');
-	err1.source = {file: path.basename(err1Path), line: 1};
-	err1.showOutput = true;
-	err1.actual = JSON.stringify('abc');
-	err1.actualType = 'string';
-	err1.expected = JSON.stringify('abd');
-	err1.expectedType = 'string';
+	err1.source = source(err1Path);
+	err1.avaAssertionError = true;
+	err1.statements = [];
+	err1.values = [
+		{label: 'actual:', formatted: JSON.stringify('abc')},
+		{label: 'expected:', formatted: JSON.stringify('abd')}
+	];
 
 	const err2 = new Error('failure two');
 	err2.stack = 'error message\nTest.fn (test.js:1:1)\n';
 	const err2Path = tempWrite.sync('b();');
-	err2.source = {file: path.basename(err2Path), line: 1};
-	err2.showOutput = true;
-	err2.actual = JSON.stringify([1]);
-	err2.actualType = 'array';
-	err2.expected = JSON.stringify([2]);
-	err2.expectedType = 'array';
+	err2.source = source(err2Path);
+	err2.avaAssertionError = true;
+	err2.statements = [];
+	err2.values = [
+		{label: 'actual:', formatted: JSON.stringify([1])},
+		{label: 'expected:', formatted: JSON.stringify([2])}
+	];
 
-	const reporter = miniReporter({basePath: path.dirname(err1Path)});
+	const reporter = miniReporter();
 	reporter.failCount = 1;
 
 	const runStatus = {
@@ -382,7 +395,6 @@ test('results with errors', t => {
 	};
 
 	const output = reporter.finish(runStatus);
-
 	compareLineOutput(t, output, flatten([
 		'',
 		'  ' + chalk.red('1 failed'),
@@ -390,11 +402,11 @@ test('results with errors', t => {
 		'  ' + chalk.bold.white('failed one'),
 		'  ' + chalk.grey(`${err1.source.file}:${err1.source.line}`),
 		'',
-		indentString(codeExcerpt(err1Path, err1.source.line), 2).split('\n'),
+		indentString(codeExcerpt(err1.source), 2).split('\n'),
 		'',
-		indentString(formatAssertError(err1), 2).split('\n'),
 		/failure one/,
 		'',
+		indentString(formatSerializedError(err1), 2).split('\n'),
 		stackLineRegex,
 		compareLineOutput.SKIP_UNTIL_EMPTY_LINE,
 		'',
@@ -403,12 +415,11 @@ test('results with errors', t => {
 		'  ' + chalk.bold.white('failed two'),
 		'  ' + chalk.grey(`${err2.source.file}:${err2.source.line}`),
 		'',
-		indentString(codeExcerpt(err2Path, err2.source.line), 2).split('\n'),
+		indentString(codeExcerpt(err2.source), 2).split('\n'),
 		'',
-		indentString(formatAssertError(err2), 2).split('\n'),
 		/failure two/,
 		'',
-		stackLineRegex
+		indentString(formatSerializedError(err2), 2).split('\n')
 	]));
 	t.end();
 });
@@ -416,23 +427,25 @@ test('results with errors', t => {
 test('results with errors and disabled code excerpts', t => {
 	const err1 = new Error('failure one');
 	err1.stack = beautifyStack(err1.stack);
-	err1.showOutput = true;
-	err1.actual = JSON.stringify('abc');
-	err1.actualType = 'string';
-	err1.expected = JSON.stringify('abd');
-	err1.expectedType = 'string';
+	err1.avaAssertionError = true;
+	err1.statements = [];
+	err1.values = [
+		{label: 'actual:', formatted: JSON.stringify('abc')},
+		{label: 'expected:', formatted: JSON.stringify('abd')}
+	];
 
 	const err2 = new Error('failure two');
 	err2.stack = 'error message\nTest.fn (test.js:1:1)\n';
 	const err2Path = tempWrite.sync('b();');
-	err2.source = {file: path.basename(err2Path), line: 1};
-	err2.showOutput = true;
-	err2.actual = JSON.stringify([1]);
-	err2.actualType = 'array';
-	err2.expected = JSON.stringify([2]);
-	err2.expectedType = 'array';
+	err2.source = source(err2Path);
+	err2.avaAssertionError = true;
+	err2.statements = [];
+	err2.values = [
+		{label: 'actual:', formatted: JSON.stringify([1])},
+		{label: 'expected:', formatted: JSON.stringify([2])}
+	];
 
-	const reporter = miniReporter({basePath: path.dirname(err2Path)});
+	const reporter = miniReporter({color: true});
 	reporter.failCount = 1;
 
 	const runStatus = {
@@ -453,9 +466,9 @@ test('results with errors and disabled code excerpts', t => {
 		'',
 		'  ' + chalk.bold.white('failed one'),
 		'',
-		indentString(formatAssertError(err1), 2).split('\n'),
 		/failure one/,
 		'',
+		indentString(formatSerializedError(err1), 2).split('\n'),
 		stackLineRegex,
 		compareLineOutput.SKIP_UNTIL_EMPTY_LINE,
 		'',
@@ -464,12 +477,11 @@ test('results with errors and disabled code excerpts', t => {
 		'  ' + chalk.bold.white('failed two'),
 		'  ' + chalk.grey(`${err2.source.file}:${err2.source.line}`),
 		'',
-		indentString(codeExcerpt(err2Path, err2.source.line), 2).split('\n'),
+		indentString(codeExcerpt(err2.source), 2).split('\n'),
 		'',
-		indentString(formatAssertError(err2), 2).split('\n'),
 		/failure two/,
 		'',
-		stackLineRegex
+		indentString(formatSerializedError(err2), 2).split('\n')
 	]));
 	t.end();
 });
@@ -478,24 +490,26 @@ test('results with errors and broken code excerpts', t => {
 	const err1 = new Error('failure one');
 	err1.stack = beautifyStack(err1.stack);
 	const err1Path = tempWrite.sync('a();');
-	err1.source = {file: path.basename(err1Path), line: 10};
-	err1.showOutput = true;
-	err1.actual = JSON.stringify('abc');
-	err1.actualType = 'string';
-	err1.expected = JSON.stringify('abd');
-	err1.expectedType = 'string';
+	err1.source = source(err1Path, 10);
+	err1.avaAssertionError = true;
+	err1.statements = [];
+	err1.values = [
+		{label: 'actual:', formatted: JSON.stringify('abc')},
+		{label: 'expected:', formatted: JSON.stringify('abd')}
+	];
 
 	const err2 = new Error('failure two');
 	err2.stack = 'error message\nTest.fn (test.js:1:1)\n';
 	const err2Path = tempWrite.sync('b();');
-	err2.source = {file: path.basename(err2Path), line: 1};
-	err2.showOutput = true;
-	err2.actual = JSON.stringify([1]);
-	err2.actualType = 'array';
-	err2.expected = JSON.stringify([2]);
-	err2.expectedType = 'array';
+	err2.source = source(err2Path);
+	err2.avaAssertionError = true;
+	err2.statements = [];
+	err2.values = [
+		{label: 'actual:', formatted: JSON.stringify([1])},
+		{label: 'expected:', formatted: JSON.stringify([2])}
+	];
 
-	const reporter = miniReporter({basePath: path.dirname(err2Path)});
+	const reporter = miniReporter({color: true});
 	reporter.failCount = 1;
 
 	const runStatus = {
@@ -517,9 +531,9 @@ test('results with errors and broken code excerpts', t => {
 		'  ' + chalk.bold.white('failed one'),
 		'  ' + chalk.grey(`${err1.source.file}:${err1.source.line}`),
 		'',
-		indentString(formatAssertError(err1), 2).split('\n'),
 		/failure one/,
 		'',
+		indentString(formatSerializedError(err1), 2).split('\n'),
 		stackLineRegex,
 		compareLineOutput.SKIP_UNTIL_EMPTY_LINE,
 		'',
@@ -528,77 +542,11 @@ test('results with errors and broken code excerpts', t => {
 		'  ' + chalk.bold.white('failed two'),
 		'  ' + chalk.grey(`${err2.source.file}:${err2.source.line}`),
 		'',
-		indentString(codeExcerpt(err2Path, err2.source.line), 2).split('\n'),
+		indentString(codeExcerpt(err2.source), 2).split('\n'),
 		'',
-		indentString(formatAssertError(err2), 2).split('\n'),
 		/failure two/,
 		'',
-		stackLineRegex
-	]));
-	t.end();
-});
-
-test('results with errors and disabled assert output', t => {
-	const err1 = new Error('failure one');
-	err1.stack = beautifyStack(err1.stack);
-	const err1Path = tempWrite.sync('a();');
-	err1.source = {file: path.basename(err1Path), line: 1};
-	err1.showOutput = false;
-	err1.actual = JSON.stringify('abc');
-	err1.actualType = 'string';
-	err1.expected = JSON.stringify('abd');
-	err1.expectedType = 'string';
-
-	const err2 = new Error('failure two');
-	err2.stack = 'error message\nTest.fn (test.js:1:1)\n';
-	const err2Path = tempWrite.sync('b();');
-	err2.source = {file: path.basename(err2Path), line: 1};
-	err2.showOutput = true;
-	err2.actual = JSON.stringify([1]);
-	err2.actualType = 'array';
-	err2.expected = JSON.stringify([2]);
-	err2.expectedType = 'array';
-
-	const reporter = miniReporter({basePath: path.dirname(err1Path)});
-	reporter.failCount = 1;
-
-	const runStatus = {
-		errors: [{
-			title: 'failed one',
-			error: err1
-		}, {
-			title: 'failed two',
-			error: err2
-		}]
-	};
-
-	const output = reporter.finish(runStatus);
-
-	compareLineOutput(t, output, flatten([
-		'',
-		'  ' + chalk.red('1 failed'),
-		'',
-		'  ' + chalk.bold.white('failed one'),
-		'  ' + chalk.grey(`${err1.source.file}:${err1.source.line}`),
-		'',
-		indentString(codeExcerpt(err1Path, err1.source.line), 2).split('\n'),
-		'',
-		/failure one/,
-		'',
-		stackLineRegex,
-		compareLineOutput.SKIP_UNTIL_EMPTY_LINE,
-		'',
-		'',
-		'',
-		'  ' + chalk.bold.white('failed two'),
-		'  ' + chalk.grey(`${err2.source.file}:${err2.source.line}`),
-		'',
-		indentString(codeExcerpt(err2Path, err2.source.line), 2).split('\n'),
-		'',
-		indentString(formatAssertError(err2), 2).split('\n'),
-		/failure two/,
-		'',
-		stackLineRegex
+		indentString(formatSerializedError(err2), 2).split('\n')
 	]));
 	t.end();
 });
@@ -643,7 +591,24 @@ test('results when fail-fast is enabled', t => {
 	compareLineOutput(t, output, [
 		'',
 		'',
-		'  ' + colors.information('`--fail-fast` is on. Any number of tests may have been skipped')
+		'  ' + colors.information('`--fail-fast` is on. At least 1 test was skipped.')
+	]);
+	t.end();
+});
+
+test('results when fail-fast is enabled with multiple skipped tests', t => {
+	const reporter = miniReporter();
+	const runStatus = {
+		remainingCount: 2,
+		failCount: 1,
+		failFastEnabled: true
+	};
+
+	const output = reporter.finish(runStatus);
+	compareLineOutput(t, output, [
+		'',
+		'',
+		'  ' + colors.information('`--fail-fast` is on. At least 2 tests were skipped.')
 	]);
 	t.end();
 });
@@ -731,7 +696,7 @@ test('results with watching enabled', t => {
 	lolex.install(new Date(2014, 11, 19, 17, 19, 12, 200).getTime(), ['Date']);
 	const time = ' ' + chalk.grey.dim('[17:19:12]');
 
-	const reporter = miniReporter({watching: true});
+	const reporter = miniReporter({color: true, watching: true});
 	reporter.passCount = 1;
 	reporter.failCount = 0;
 
@@ -903,5 +868,29 @@ test('results when hasExclusive is enabled, but there are multiple remaining tes
 		'\n'
 	].join('\n');
 	t.is(actualOutput, expectedOutput);
+	t.end();
+});
+
+test('result when no-color flag is set', t => {
+	const reporter = miniReporter({
+		color: false
+	});
+
+	const runStatus = {
+		hasExclusive: true,
+		testCount: 3,
+		passCount: 1,
+		failCount: 0,
+		remainingCount: 2
+	};
+
+	const output = reporter.finish(runStatus);
+	const expectedOutput = [
+		'',
+		'',
+		'  The .only() modifier is used in some tests. 2 tests were not run',
+		'\n'
+	].join('\n');
+	t.is(output, expectedOutput);
 	t.end();
 });

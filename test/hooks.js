@@ -6,7 +6,16 @@ const _fork = require('../lib/fork.js');
 const CachingPrecompiler = require('../lib/caching-precompiler');
 
 const cacheDir = path.join(__dirname, '../node_modules/.cache/ava');
-const precompiler = new CachingPrecompiler({path: cacheDir});
+const precompiler = new CachingPrecompiler({
+	babelCacheKeys: {},
+	getBabelOptions() {
+		return {
+			babelrc: false,
+			presets: [require.resolve('@ava/babel-preset-stage-4')]
+		};
+	},
+	path: cacheDir
+});
 
 function fork(testPath) {
 	const hash = precompiler.precompileFile(testPath);
@@ -25,11 +34,12 @@ test('before', t => {
 	const runner = new Runner();
 	const arr = [];
 
-	runner.before(() => {
+	runner.chain.before(() => {
 		arr.push('a');
 	});
 
-	runner.test(() => {
+	runner.chain.test(a => {
+		a.pass();
 		arr.push('b');
 	});
 
@@ -44,15 +54,17 @@ test('after', t => {
 	const runner = new Runner();
 	const arr = [];
 
-	runner.after(() => {
+	runner.chain.after(() => {
 		arr.push('b');
 	});
 
-	runner.test(() => {
+	runner.chain.test(a => {
+		a.pass();
 		arr.push('a');
 	});
 
-	return runner.run({}).then(stats => {
+	return runner.run({}).then(() => {
+		const stats = runner.buildStats();
 		t.is(stats.passCount, 1);
 		t.is(stats.failCount, 0);
 		t.strictDeepEqual(arr, ['a', 'b']);
@@ -66,14 +78,15 @@ test('after not run if test failed', t => {
 	const runner = new Runner();
 	const arr = [];
 
-	runner.after(() => {
+	runner.chain.after(() => {
 		arr.push('a');
 	});
 
-	runner.test(() => {
+	runner.chain.test(() => {
 		throw new Error('something went wrong');
 	});
-	return runner.run({}).then(stats => {
+	return runner.run({}).then(() => {
+		const stats = runner.buildStats();
 		t.is(stats.passCount, 0);
 		t.is(stats.failCount, 1);
 		t.strictDeepEqual(arr, []);
@@ -87,14 +100,15 @@ test('after.always run even if test failed', t => {
 	const runner = new Runner();
 	const arr = [];
 
-	runner.after.always(() => {
+	runner.chain.after.always(() => {
 		arr.push('a');
 	});
 
-	runner.test(() => {
+	runner.chain.test(() => {
 		throw new Error('something went wrong');
 	});
-	return runner.run({}).then(stats => {
+	return runner.run({}).then(() => {
+		const stats = runner.buildStats();
 		t.is(stats.passCount, 0);
 		t.is(stats.failCount, 1);
 		t.strictDeepEqual(arr, ['a']);
@@ -108,11 +122,11 @@ test('after.always run even if before failed', t => {
 	const runner = new Runner();
 	const arr = [];
 
-	runner.before(() => {
+	runner.chain.before(() => {
 		throw new Error('something went wrong');
 	});
 
-	runner.after.always(() => {
+	runner.chain.after.always(() => {
 		arr.push('a');
 	});
 
@@ -128,15 +142,16 @@ test('stop if before hooks failed', t => {
 	const runner = new Runner();
 	const arr = [];
 
-	runner.before(() => {
+	runner.chain.before(() => {
 		arr.push('a');
 	});
 
-	runner.before(() => {
+	runner.chain.before(() => {
 		throw new Error('something went wrong');
 	});
 
-	runner.test(a => {
+	runner.chain.test(a => {
+		a.pass();
 		arr.push('b');
 		a.end();
 	});
@@ -155,19 +170,21 @@ test('before each with concurrent tests', t => {
 	let i = 0;
 	let k = 0;
 
-	runner.beforeEach(() => {
+	runner.chain.beforeEach(() => {
 		arr[i++].push('a');
 	});
 
-	runner.beforeEach(() => {
+	runner.chain.beforeEach(() => {
 		arr[k++].push('b');
 	});
 
-	runner.test(() => {
+	runner.chain.test(a => {
+		a.pass();
 		arr[0].push('c');
 	});
 
-	runner.test(() => {
+	runner.chain.test(a => {
+		a.pass();
 		arr[1].push('d');
 	});
 
@@ -183,19 +200,21 @@ test('before each with serial tests', t => {
 	const runner = new Runner();
 	const arr = [];
 
-	runner.beforeEach(() => {
+	runner.chain.beforeEach(() => {
 		arr.push('a');
 	});
 
-	runner.beforeEach(() => {
+	runner.chain.beforeEach(() => {
 		arr.push('b');
 	});
 
-	runner.serial(() => {
+	runner.chain.serial(a => {
+		a.pass();
 		arr.push('c');
 	});
 
-	runner.serial(() => {
+	runner.chain.serial(a => {
+		a.pass();
 		arr.push('d');
 	});
 
@@ -211,17 +230,18 @@ test('fail if beforeEach hook fails', t => {
 	const runner = new Runner();
 	const arr = [];
 
-	runner.beforeEach(a => {
+	runner.chain.beforeEach(a => {
 		arr.push('a');
 		a.fail();
 	});
 
-	runner.test(a => {
+	runner.chain.test(a => {
 		arr.push('b');
 		a.pass();
 	});
 
-	return runner.run({}).then(stats => {
+	return runner.run({}).then(() => {
+		const stats = runner.buildStats();
 		t.is(stats.failCount, 1);
 		t.strictDeepEqual(arr, ['a']);
 		t.end();
@@ -236,19 +256,21 @@ test('after each with concurrent tests', t => {
 	let i = 0;
 	let k = 0;
 
-	runner.afterEach(() => {
+	runner.chain.afterEach(() => {
 		arr[i++].push('a');
 	});
 
-	runner.afterEach(() => {
+	runner.chain.afterEach(() => {
 		arr[k++].push('b');
 	});
 
-	runner.test(() => {
+	runner.chain.test(a => {
+		a.pass();
 		arr[0].push('c');
 	});
 
-	runner.test(() => {
+	runner.chain.test(a => {
+		a.pass();
 		arr[1].push('d');
 	});
 
@@ -264,19 +286,21 @@ test('after each with serial tests', t => {
 	const runner = new Runner();
 	const arr = [];
 
-	runner.afterEach(() => {
+	runner.chain.afterEach(() => {
 		arr.push('a');
 	});
 
-	runner.afterEach(() => {
+	runner.chain.afterEach(() => {
 		arr.push('b');
 	});
 
-	runner.serial(() => {
+	runner.chain.serial(a => {
+		a.pass();
 		arr.push('c');
 	});
 
-	runner.serial(() => {
+	runner.chain.serial(a => {
+		a.pass();
 		arr.push('d');
 	});
 
@@ -292,11 +316,11 @@ test('afterEach not run if concurrent tests failed', t => {
 	const runner = new Runner();
 	const arr = [];
 
-	runner.afterEach(() => {
+	runner.chain.afterEach(() => {
 		arr.push('a');
 	});
 
-	runner.test(() => {
+	runner.chain.test(() => {
 		throw new Error('something went wrong');
 	});
 
@@ -312,11 +336,11 @@ test('afterEach not run if serial tests failed', t => {
 	const runner = new Runner();
 	const arr = [];
 
-	runner.afterEach(() => {
+	runner.chain.afterEach(() => {
 		arr.push('a');
 	});
 
-	runner.serial(() => {
+	runner.chain.serial(() => {
 		throw new Error('something went wrong');
 	});
 
@@ -332,11 +356,11 @@ test('afterEach.always run even if concurrent tests failed', t => {
 	const runner = new Runner();
 	const arr = [];
 
-	runner.afterEach.always(() => {
+	runner.chain.afterEach.always(() => {
 		arr.push('a');
 	});
 
-	runner.test(() => {
+	runner.chain.test(() => {
 		throw new Error('something went wrong');
 	});
 
@@ -352,11 +376,11 @@ test('afterEach.always run even if serial tests failed', t => {
 	const runner = new Runner();
 	const arr = [];
 
-	runner.afterEach.always(() => {
+	runner.chain.afterEach.always(() => {
 		arr.push('a');
 	});
 
-	runner.serial(() => {
+	runner.chain.serial(() => {
 		throw new Error('something went wrong');
 	});
 
@@ -372,15 +396,16 @@ test('afterEach.always run even if beforeEach failed', t => {
 	const runner = new Runner();
 	const arr = [];
 
-	runner.beforeEach(() => {
+	runner.chain.beforeEach(() => {
 		throw new Error('something went wrong');
 	});
 
-	runner.test(() => {
+	runner.chain.test(a => {
+		a.pass();
 		arr.push('a');
 	});
 
-	runner.afterEach.always(() => {
+	runner.chain.afterEach.always(() => {
 		arr.push('b');
 	});
 
@@ -396,23 +421,24 @@ test('ensure hooks run only around tests', t => {
 	const runner = new Runner();
 	const arr = [];
 
-	runner.beforeEach(() => {
+	runner.chain.beforeEach(() => {
 		arr.push('beforeEach');
 	});
 
-	runner.before(() => {
+	runner.chain.before(() => {
 		arr.push('before');
 	});
 
-	runner.afterEach(() => {
+	runner.chain.afterEach(() => {
 		arr.push('afterEach');
 	});
 
-	runner.after(() => {
+	runner.chain.after(() => {
 		arr.push('after');
 	});
 
-	runner.test(() => {
+	runner.chain.test(a => {
+		a.pass();
 		arr.push('test');
 	});
 
@@ -427,29 +453,31 @@ test('shared context', t => {
 
 	const runner = new Runner();
 
-	runner.before(a => {
+	runner.chain.before(a => {
 		a.is(a.context, null);
 	});
 
-	runner.after(a => {
+	runner.chain.after(a => {
 		a.is(a.context, null);
 	});
 
-	runner.beforeEach(a => {
+	runner.chain.beforeEach(a => {
 		a.context.arr = ['a'];
 	});
 
-	runner.test(a => {
+	runner.chain.test(a => {
+		a.pass();
 		a.context.arr.push('b');
 		a.deepEqual(a.context.arr, ['a', 'b']);
 	});
 
-	runner.afterEach(a => {
+	runner.chain.afterEach(a => {
 		a.context.arr.push('c');
 		a.deepEqual(a.context.arr, ['a', 'b', 'c']);
 	});
 
-	return runner.run({}).then(stats => {
+	return runner.run({}).then(() => {
+		const stats = runner.buildStats();
 		t.is(stats.failCount, 0);
 		t.end();
 	});
@@ -460,15 +488,17 @@ test('shared context of any type', t => {
 
 	const runner = new Runner();
 
-	runner.beforeEach(a => {
+	runner.chain.beforeEach(a => {
 		a.context = 'foo';
 	});
 
-	runner.test(a => {
+	runner.chain.test(a => {
+		a.pass();
 		a.is(a.context, 'foo');
 	});
 
-	return runner.run({}).then(stats => {
+	return runner.run({}).then(() => {
+		const stats = runner.buildStats();
 		t.is(stats.failCount, 0);
 		t.end();
 	});

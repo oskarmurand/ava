@@ -12,6 +12,7 @@ const Promise = require('bluebird');
 const getPort = require('get-port');
 const arrify = require('arrify');
 const ms = require('ms');
+const babelConfigHelper = require('./lib/babel-config');
 const CachingPrecompiler = require('./lib/caching-precompiler');
 const RunStatus = require('./lib/run-status');
 const AvaError = require('./lib/ava-error');
@@ -49,12 +50,7 @@ class Api extends EventEmitter {
 		super();
 		autoBind(this);
 
-		this.options = Object.assign({
-			cwd: process.cwd(),
-			resolveTestsFrom: process.cwd(),
-			match: []
-		}, options);
-
+		this.options = Object.assign({match: []}, options);
 		this.options.require = resolveModules(this.options.require);
 	}
 	_runFile(file, runStatus, execArgv) {
@@ -110,15 +106,23 @@ class Api extends EventEmitter {
 		this.options.cacheDir = cacheDir;
 
 		const isPowerAssertEnabled = this.options.powerAssert !== false;
-		this.precompiler = new CachingPrecompiler({
-			path: cacheDir,
-			babel: this.options.babelConfig,
-			powerAssert: isPowerAssertEnabled
-		});
+		return babelConfigHelper.build(this.options.projectDir, cacheDir, this.options.babelConfig, isPowerAssertEnabled)
+			.then(result => {
+				this.precompiler = new CachingPrecompiler({
+					path: cacheDir,
+					getBabelOptions: result.getOptions,
+					babelCacheKeys: result.cacheKeys
+				});
+			});
 	}
 	_precompileHelpers() {
 		this._precompiledHelpers = {};
 
+		// Assumes the tests only load helpers from within the `resolveTestsFrom`
+		// directory. Without arguments this is the `projectDir`, else it's
+		// `process.cwd()` which may be nested too deeply. This will be solved
+		// as we implement RFC 001 and move helper compilation into the worker
+		// processes, avoiding the need for precompilation.
 		return new AvaFiles({cwd: this.options.resolveTestsFrom})
 			.findTestHelpers()
 			.map(file => { // eslint-disable-line array-callback-return
@@ -144,9 +148,8 @@ class Api extends EventEmitter {
 			return Promise.resolve(runStatus);
 		}
 
-		this._setupPrecompiler(files);
-
-		return this._precompileHelpers()
+		return this._setupPrecompiler(files)
+			.then(() => this._precompileHelpers())
 			.then(() => {
 				if (this.options.timeout) {
 					this._setupTimeout(runStatus);
@@ -195,7 +198,7 @@ class Api extends EventEmitter {
 		}
 
 		return Promise
-			.map(files, getPort)
+			.map(files, () => getPort())
 			.map(port => {
 				const forkExecArgv = execArgv.slice();
 				let flagName = isInspect ? '--inspect' : '--debug';

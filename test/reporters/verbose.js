@@ -1,5 +1,4 @@
 'use strict';
-const path = require('path');
 const indentString = require('indent-string');
 const flatten = require('arr-flatten');
 const tempWrite = require('temp-write');
@@ -12,7 +11,7 @@ const beautifyStack = require('../../lib/beautify-stack');
 const colors = require('../../lib/colors');
 const VerboseReporter = require('../../lib/reporters/verbose');
 const compareLineOutput = require('../helper/compare-line-output');
-const formatAssertError = require('../../lib/format-assert-error');
+const formatSerializedError = require('../../lib/format-assert-error').formatSerializedError;
 const codeExcerpt = require('../../lib/code-excerpt');
 
 chalk.enabled = true;
@@ -23,6 +22,9 @@ lolex.install(new Date(2014, 11, 19, 17, 19, 12, 200).getTime(), ['Date']);
 const time = ' ' + chalk.grey.dim('[17:19:12]');
 
 function createReporter(options) {
+	if (options === undefined) {
+		options = {color: true};
+	}
 	const reporter = new VerboseReporter(options);
 	return reporter;
 }
@@ -40,6 +42,15 @@ function fooFunc() {
 
 function barFunc() {
 	throw new Error();
+}
+
+function source(file, line) {
+	return {
+		file,
+		line: line || 1,
+		isWithinProject: true,
+		isDependency: false
+	};
 }
 
 test('beautify stack - removes uninteresting lines', t => {
@@ -361,24 +372,26 @@ test('results with errors', t => {
 	const error1 = new Error('error one message');
 	error1.stack = beautifyStack(error1.stack);
 	const err1Path = tempWrite.sync('a()');
-	error1.source = {file: path.basename(err1Path), line: 1};
-	error1.showOutput = true;
-	error1.actual = JSON.stringify('abc');
-	error1.actualType = 'string';
-	error1.expected = JSON.stringify('abd');
-	error1.expectedType = 'string';
+	error1.source = source(err1Path);
+	error1.avaAssertionError = true;
+	error1.statements = [];
+	error1.values = [
+		{label: 'actual:', formatted: JSON.stringify('abc')},
+		{lael: 'expected:', formatted: JSON.stringify('abd')}
+	];
 
 	const error2 = new Error('error two message');
 	error2.stack = 'error message\nTest.fn (test.js:1:1)\n';
 	const err2Path = tempWrite.sync('b()');
-	error2.source = {file: path.basename(err2Path), line: 1};
-	error2.showOutput = true;
-	error2.actual = JSON.stringify([1]);
-	error2.actualType = 'array';
-	error2.expected = JSON.stringify([2]);
-	error2.expectedType = 'array';
+	error2.source = source(err2Path);
+	error2.avaAssertionError = true;
+	error2.statements = [];
+	error2.values = [
+		{label: 'actual:', formatted: JSON.stringify([1])},
+		{lael: 'expected:', formatted: JSON.stringify([2])}
+	];
 
-	const reporter = createReporter({basePath: path.dirname(err1Path)});
+	const reporter = createReporter({color: true});
 	const runStatus = createRunStatus();
 	runStatus.failCount = 1;
 	runStatus.tests = [{
@@ -397,11 +410,11 @@ test('results with errors', t => {
 		'  ' + chalk.bold.white('fail one'),
 		'  ' + chalk.grey(`${error1.source.file}:${error1.source.line}`),
 		'',
-		indentString(codeExcerpt(err1Path, error1.source.line), 2).split('\n'),
+		indentString(codeExcerpt(error1.source), 2).split('\n'),
 		'',
-		indentString(formatAssertError(error1), 2).split('\n'),
 		/error one message/,
 		'',
+		indentString(formatSerializedError(error1), 2).split('\n'),
 		stackLineRegex,
 		compareLineOutput.SKIP_UNTIL_EMPTY_LINE,
 		'',
@@ -410,12 +423,11 @@ test('results with errors', t => {
 		'  ' + chalk.bold.white('fail two'),
 		'  ' + chalk.grey(`${error2.source.file}:${error2.source.line}`),
 		'',
-		indentString(codeExcerpt(err2Path, error2.source.line), 2).split('\n'),
+		indentString(codeExcerpt(error2.source), 2).split('\n'),
 		'',
-		indentString(formatAssertError(error2), 2).split('\n'),
 		/error two message/,
 		'',
-		stackLineRegex
+		indentString(formatSerializedError(error2), 2).split('\n')
 	]));
 	t.end();
 });
@@ -423,23 +435,25 @@ test('results with errors', t => {
 test('results with errors and disabled code excerpts', t => {
 	const error1 = new Error('error one message');
 	error1.stack = beautifyStack(error1.stack);
-	error1.showOutput = true;
-	error1.actual = JSON.stringify('abc');
-	error1.actualType = 'string';
-	error1.expected = JSON.stringify('abd');
-	error1.expectedType = 'string';
+	error1.avaAssertionError = true;
+	error1.statements = [];
+	error1.values = [
+		{label: 'actual:', formatted: JSON.stringify('abc')},
+		{lael: 'expected:', formatted: JSON.stringify('abd')}
+	];
 
 	const error2 = new Error('error two message');
 	error2.stack = 'error message\nTest.fn (test.js:1:1)\n';
 	const err2Path = tempWrite.sync('b()');
-	error2.source = {file: path.basename(err2Path), line: 1};
-	error2.showOutput = true;
-	error2.actual = JSON.stringify([1]);
-	error2.actualType = 'array';
-	error2.expected = JSON.stringify([2]);
-	error2.expectedType = 'array';
+	error2.source = source(err2Path);
+	error2.avaAssertionError = true;
+	error2.statements = [];
+	error2.values = [
+		{label: 'actual:', formatted: JSON.stringify([1])},
+		{lael: 'expected:', formatted: JSON.stringify([2])}
+	];
 
-	const reporter = createReporter({basePath: path.dirname(err2Path)});
+	const reporter = createReporter({color: true});
 	const runStatus = createRunStatus();
 	runStatus.failCount = 1;
 	runStatus.tests = [{
@@ -457,9 +471,9 @@ test('results with errors and disabled code excerpts', t => {
 		'',
 		'  ' + chalk.bold.white('fail one'),
 		'',
-		indentString(formatAssertError(error1), 2).split('\n'),
 		/error one message/,
 		'',
+		indentString(formatSerializedError(error1), 2).split('\n'),
 		stackLineRegex,
 		compareLineOutput.SKIP_UNTIL_EMPTY_LINE,
 		'',
@@ -468,12 +482,11 @@ test('results with errors and disabled code excerpts', t => {
 		'  ' + chalk.bold.white('fail two'),
 		'  ' + chalk.grey(`${error2.source.file}:${error2.source.line}`),
 		'',
-		indentString(codeExcerpt(err2Path, error2.source.line), 2).split('\n'),
+		indentString(codeExcerpt(error2.source), 2).split('\n'),
 		'',
-		indentString(formatAssertError(error2), 2).split('\n'),
 		/error two message/,
 		'',
-		stackLineRegex
+		indentString(formatSerializedError(error2), 2).split('\n')
 	]));
 	t.end();
 });
@@ -482,24 +495,26 @@ test('results with errors and disabled code excerpts', t => {
 	const error1 = new Error('error one message');
 	error1.stack = beautifyStack(error1.stack);
 	const err1Path = tempWrite.sync('a();');
-	error1.source = {file: path.basename(err1Path), line: 10};
-	error1.showOutput = true;
-	error1.actual = JSON.stringify('abc');
-	error1.actualType = 'string';
-	error1.expected = JSON.stringify('abd');
-	error1.expectedType = 'string';
+	error1.source = source(err1Path, 10);
+	error1.avaAssertionError = true;
+	error1.statements = [];
+	error1.values = [
+		{label: 'actual:', formatted: JSON.stringify('abc')},
+		{lael: 'expected:', formatted: JSON.stringify('abd')}
+	];
 
 	const error2 = new Error('error two message');
 	error2.stack = 'error message\nTest.fn (test.js:1:1)\n';
 	const err2Path = tempWrite.sync('b()');
-	error2.source = {file: path.basename(err2Path), line: 1};
-	error2.showOutput = true;
-	error2.actual = JSON.stringify([1]);
-	error2.actualType = 'array';
-	error2.expected = JSON.stringify([2]);
-	error2.expectedType = 'array';
+	error2.source = source(err2Path);
+	error2.avaAssertionError = true;
+	error2.statements = [];
+	error2.values = [
+		{label: 'actual:', formatted: JSON.stringify([1])},
+		{lael: 'expected:', formatted: JSON.stringify([2])}
+	];
 
-	const reporter = createReporter({basePath: path.dirname(err2Path)});
+	const reporter = createReporter({color: true});
 	const runStatus = createRunStatus();
 	runStatus.failCount = 1;
 	runStatus.tests = [{
@@ -518,9 +533,9 @@ test('results with errors and disabled code excerpts', t => {
 		'  ' + chalk.bold.white('fail one'),
 		'  ' + chalk.grey(`${error1.source.file}:${error1.source.line}`),
 		'',
-		indentString(formatAssertError(error1), 2).split('\n'),
 		/error one message/,
 		'',
+		indentString(formatSerializedError(error1), 2).split('\n'),
 		stackLineRegex,
 		compareLineOutput.SKIP_UNTIL_EMPTY_LINE,
 		'',
@@ -529,80 +544,17 @@ test('results with errors and disabled code excerpts', t => {
 		'  ' + chalk.bold.white('fail two'),
 		'  ' + chalk.grey(`${error2.source.file}:${error2.source.line}`),
 		'',
-		indentString(codeExcerpt(err2Path, error2.source.line), 2).split('\n'),
+		indentString(codeExcerpt(error2.source), 2).split('\n'),
 		'',
-		indentString(formatAssertError(error2), 2).split('\n'),
 		/error two message/,
 		'',
-		stackLineRegex
-	]));
-	t.end();
-});
-
-test('results with errors and disabled assert output', t => {
-	const error1 = new Error('error one message');
-	error1.stack = beautifyStack(error1.stack);
-	const err1Path = tempWrite.sync('a();');
-	error1.source = {file: path.basename(err1Path), line: 1};
-	error1.showOutput = false;
-	error1.actual = JSON.stringify('abc');
-	error1.actualType = 'string';
-	error1.expected = JSON.stringify('abd');
-	error1.expectedType = 'string';
-
-	const error2 = new Error('error two message');
-	error2.stack = 'error message\nTest.fn (test.js:1:1)\n';
-	const err2Path = tempWrite.sync('b();');
-	error2.source = {file: path.basename(err2Path), line: 1};
-	error2.showOutput = true;
-	error2.actual = JSON.stringify([1]);
-	error2.actualType = 'array';
-	error2.expected = JSON.stringify([2]);
-	error2.expectedType = 'array';
-
-	const reporter = createReporter({basePath: path.dirname(err1Path)});
-	const runStatus = createRunStatus();
-	runStatus.failCount = 1;
-	runStatus.tests = [{
-		title: 'fail one',
-		error: error1
-	}, {
-		title: 'fail two',
-		error: error2
-	}];
-
-	const output = reporter.finish(runStatus);
-	compareLineOutput(t, output, flatten([
-		'',
-		'  ' + chalk.red('1 test failed') + time,
-		'',
-		'  ' + chalk.bold.white('fail one'),
-		'  ' + chalk.grey(`${error1.source.file}:${error1.source.line}`),
-		'',
-		indentString(codeExcerpt(err1Path, error1.source.line), 2).split('\n'),
-		'',
-		/error one message/,
-		'',
-		stackLineRegex,
-		compareLineOutput.SKIP_UNTIL_EMPTY_LINE,
-		'',
-		'',
-		'',
-		'  ' + chalk.bold.white('fail two'),
-		'  ' + chalk.grey(`${error2.source.file}:${error2.source.line}`),
-		'',
-		indentString(codeExcerpt(err2Path, error2.source.line), 2).split('\n'),
-		'',
-		indentString(formatAssertError(error2), 2).split('\n'),
-		/error two message/,
-		'',
-		stackLineRegex
+		indentString(formatSerializedError(error2), 2).split('\n')
 	]));
 	t.end();
 });
 
 test('results when fail-fast is enabled', t => {
-	const reporter = new VerboseReporter();
+	const reporter = createReporter();
 	const runStatus = createRunStatus();
 	runStatus.remainingCount = 1;
 	runStatus.failCount = 1;
@@ -617,7 +569,31 @@ test('results when fail-fast is enabled', t => {
 		'  ' + chalk.red('1 test failed') + time,
 		'',
 		'',
-		'  ' + colors.information('`--fail-fast` is on. Any number of tests may have been skipped'),
+		'  ' + colors.information('`--fail-fast` is on. At least 1 test was skipped.'),
+		''
+	].join('\n');
+
+	t.is(output, expectedOutput);
+	t.end();
+});
+
+test('results when fail-fast is enabled with multiple skipped tests', t => {
+	const reporter = new VerboseReporter({color: true});
+	const runStatus = createRunStatus();
+	runStatus.remainingCount = 2;
+	runStatus.failCount = 1;
+	runStatus.failFastEnabled = true;
+	runStatus.tests = [{
+		title: 'failed test'
+	}];
+
+	const output = reporter.finish(runStatus);
+	const expectedOutput = [
+		'',
+		'  ' + chalk.red('1 test failed') + time,
+		'',
+		'',
+		'  ' + colors.information('`--fail-fast` is on. At least 2 tests were skipped.'),
 		''
 	].join('\n');
 
@@ -626,7 +602,7 @@ test('results when fail-fast is enabled', t => {
 });
 
 test('results without fail-fast if no failing tests', t => {
-	const reporter = new VerboseReporter();
+	const reporter = createReporter();
 	const runStatus = createRunStatus();
 	runStatus.remainingCount = 1;
 	runStatus.failCount = 0;
@@ -645,7 +621,7 @@ test('results without fail-fast if no failing tests', t => {
 });
 
 test('results without fail-fast if no skipped tests', t => {
-	const reporter = new VerboseReporter();
+	const reporter = createReporter();
 	const runStatus = createRunStatus();
 	runStatus.remainingCount = 0;
 	runStatus.failCount = 1;
@@ -715,7 +691,7 @@ test('full-width line when sectioning', t => {
 
 test('write calls console.error', t => {
 	const stub = sinon.stub(console, 'error');
-	const reporter = new VerboseReporter();
+	const reporter = createReporter();
 	reporter.write('result');
 	t.true(stub.called);
 	console.error.restore();
@@ -723,7 +699,7 @@ test('write calls console.error', t => {
 });
 
 test('reporter.stdout and reporter.stderr both use process.stderr.write', t => {
-	const reporter = new VerboseReporter();
+	const reporter = createReporter();
 	const stub = sinon.stub(process.stderr, 'write');
 	reporter.stdout('result');
 	reporter.stderr('result');
@@ -733,7 +709,7 @@ test('reporter.stdout and reporter.stderr both use process.stderr.write', t => {
 });
 
 test('results when hasExclusive is enabled, but there are no known remaining tests', t => {
-	const reporter = new VerboseReporter();
+	const reporter = createReporter();
 	const runStatus = createRunStatus();
 	runStatus.hasExclusive = true;
 	runStatus.passCount = 1;
@@ -750,7 +726,7 @@ test('results when hasExclusive is enabled, but there are no known remaining tes
 });
 
 test('results when hasExclusive is enabled, but there is one remaining tests', t => {
-	const reporter = new VerboseReporter();
+	const reporter = createReporter();
 	const runStatus = createRunStatus();
 	runStatus.hasExclusive = true;
 	runStatus.testCount = 2;
@@ -773,7 +749,7 @@ test('results when hasExclusive is enabled, but there is one remaining tests', t
 });
 
 test('results when hasExclusive is enabled, but there are multiple remaining tests', t => {
-	const reporter = new VerboseReporter();
+	const reporter = createReporter();
 	const runStatus = createRunStatus();
 	runStatus.hasExclusive = true;
 	runStatus.testCount = 3;
@@ -788,6 +764,29 @@ test('results when hasExclusive is enabled, but there are multiple remaining tes
 		'',
 		'',
 		'  ' + colors.information('The .only() modifier is used in some tests. 2 tests were not run'),
+		''
+	].join('\n');
+
+	t.is(output, expectedOutput);
+	t.end();
+});
+
+test('result when no-color flag is set', t => {
+	const reporter = new VerboseReporter({color: false});
+	const runStatus = createRunStatus();
+	runStatus.hasExclusive = true;
+	runStatus.testCount = 3;
+	runStatus.passCount = 1;
+	runStatus.failCount = 0;
+	runStatus.remainingCount = 2;
+
+	const output = reporter.finish(runStatus);
+	const expectedOutput = [
+		'',
+		'  1 test passed [17:19:12]',
+		'',
+		'',
+		'  The .only() modifier is used in some tests. 2 tests were not run',
 		''
 	].join('\n');
 
