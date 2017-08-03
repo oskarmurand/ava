@@ -164,7 +164,8 @@
     "supports-color": "^3.2.3",
     "time-require": "^0.1.2",
     "unique-temp-dir": "^1.0.0",
-    "update-notifier": "^2.1.0"
+    "update-notifier": "^2.1.0",
+    "xml-escape": "^1.1.0"
   },
   "devDependencies": {
     "babel-preset-react": "^6.5.0",
